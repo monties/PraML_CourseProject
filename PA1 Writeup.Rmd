@@ -1,0 +1,112 @@
+===
+Prediction Assignment: Writeup
+===
+## Synopsis  
+
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement ¡V a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify *how well they do it.*  
+
+In this project, we use data from 4 accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the **groupware** website: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).  
+
+In this report, you can see we transforming the training set (downloaded from the [course website](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)) by reducing the predictors to 12 components and taking Gradient Boosting machine (GBM) methodology to predict the manner in which participants did the exercise. The result shows that the reduced 12 principal components could predict human actions. The accuracy rate is 79%.  
+
+At the end, we take the prediction model to predict the test set which is also downloaded from the [course website](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).  
+
+## Data Processing
+### Data Preparation
+
+```{r load the data, cache=TRUE}
+train <- read.csv("pml-training.csv"); test <- read.csv("pml-testing.csv")
+dim(train); summary(train[,160])
+```
+
+There are 160 variables in total. We don't need all of the variables, espicially for most of the statistical numbers having missing values. We only take the raw measured data to predict whether the exercises are exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) or throwing the hips to the front (Class E).  
+
+In particular, the input 52 predictors from the 4 sensors (belt, arm, dumbell and forearm) are:  
+    - The sliding window records from 3 Euler angles (roll, pitch and yaw)  
+    - The raw accelerometer, gyroscope and magnetometer readings  
+
+```{r subsets, cache=TRUE}
+train <- train[,c("classe", "roll_belt", "pitch_belt", "yaw_belt", "total_accel_belt",
+                  "gyros_belt_x", "gyros_belt_y", "gyros_belt_z",
+                  "accel_belt_x", "accel_belt_y", "accel_belt_z",
+                  "magnet_belt_x", "magnet_belt_y", "magnet_belt_z",
+                  "roll_arm", "pitch_arm", "yaw_arm", "total_accel_arm",
+                  "gyros_arm_x", "gyros_arm_y", "gyros_arm_z",
+                  "accel_arm_x", "accel_arm_y", "accel_arm_z",
+                  "magnet_arm_x", "magnet_arm_y", "magnet_arm_z",
+                  "roll_dumbbell", "pitch_dumbbell", "yaw_dumbbell", "total_accel_dumbbell",
+                  "gyros_dumbbell_x", "gyros_dumbbell_y", "gyros_dumbbell_z",
+                  "accel_dumbbell_x", "accel_dumbbell_y", "accel_dumbbell_z",
+                  "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z",
+                  "roll_forearm", "pitch_forearm", "yaw_forearm", "total_accel_forearm",
+                  "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z",
+                  "accel_forearm_x", "accel_forearm_y", "accel_forearm_z",
+                  "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z")]
+dim(train)
+```
+
+### Pre-processing  
+
+In the very begining, we'd find if there is any high correlations between predictors.  
+
+```{r Correlated predictors, cache=TRUE}
+M <- abs(cor(train[,-1]))
+diag(M) <- 0
+length(which(M > 0.8))/2; which(M > 0.8, arr.ind = TRUE)
+```
+
+19 variables have high correlation with some others.  
+
+For there are too many predictors and more than one third of them are correlated with others. We need to reduce the number of predictors statistically.  
+
+```{r PCA Preprocessing, cache=TRUE}
+library(caret)
+preproc <- preProcess(train[, -1], method = "pca", thresh = .8)
+preproc
+round(preproc$rotation, 4)
+```
+
+52 variables can be reduced to 12 components to capture 80% of the variance.  
+
+```{r creating reduced data set, cache=TRUE}
+trainPC <- predict(preproc, train[,-1]); trainPC$classe <- train$classe
+```
+
+## Modeling  
+
+Since the dependent variable is discrete data we cannot take regression method. In particular here we use GBM method to classify the training data set into 5 exercise classes which should match the original class.  
+
+```{r modeling, cache=TRUE}
+library(gbm)
+modFit <- train(classe ~ ., method = "gbm", data = trainPC)
+print(modFit$finalModel); print(modFit$results)
+pgbm <- predict(modFit, trainPC[,-13])
+confusionMatrix(trainPC$classe, pgbm)
+```
+
+As the results show, the accuracy rate is around 79%.  
+
+## Prediction  
+
+Finally, we'd apply the fitted model to predict the test data set.  
+
+```{r predction, cache=TRUE}
+test <- test[,c("problem_id", "roll_belt", "pitch_belt", "yaw_belt", "total_accel_belt",
+                "gyros_belt_x", "gyros_belt_y", "gyros_belt_z",
+                "accel_belt_x", "accel_belt_y", "accel_belt_z",
+                "magnet_belt_x", "magnet_belt_y", "magnet_belt_z",
+                "roll_arm", "pitch_arm", "yaw_arm", "total_accel_arm",
+                "gyros_arm_x", "gyros_arm_y", "gyros_arm_z",
+                "accel_arm_x", "accel_arm_y", "accel_arm_z",
+                "magnet_arm_x", "magnet_arm_y", "magnet_arm_z",
+                "roll_dumbbell", "pitch_dumbbell", "yaw_dumbbell", "total_accel_dumbbell",
+                "gyros_dumbbell_x", "gyros_dumbbell_y", "gyros_dumbbell_z",
+                "accel_dumbbell_x", "accel_dumbbell_y", "accel_dumbbell_z",
+                "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z",
+                "roll_forearm", "pitch_forearm", "yaw_forearm", "total_accel_forearm",
+                "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z",
+                "accel_forearm_x", "accel_forearm_y", "accel_forearm_z",
+                "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z")]
+testPC <- predict(preproc, test[,-1])
+predict(modFit, testPC[,-13])
+```
